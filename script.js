@@ -154,7 +154,9 @@ async function hostGame() {
   setupRTC();
 
   lobbyId = lobbyCode();
-  status.textContent = `Lobby: ${lobbyId}`;
+  lobbyCodeInput.value = lobbyId;
+  lobbyCodeInput.select();
+  status.textContent = "Share this lobby code with your opponent";
 
   const ref = doc(db, "lobbies", lobbyId);
   const offer = await pc.createOffer();
