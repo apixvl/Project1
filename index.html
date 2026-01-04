@@ -6,29 +6,65 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Minesweeper PvP</h1>
 
+  <h1>Minesweeper PvP 💣</h1>
+
+  <!-- SETTINGS -->
   <div id="settings">
-    <label>Rows: <input type="number" id="rows" value="10" min="5" max="30"></label>
-    <label>Cols: <input type="number" id="cols" value="10" min="5" max="30"></label>
-    <label>Bombs: <input type="number" id="bombs" value="10" min="1" max="300"></label>
+    <label>
+      Rows:
+      <input type="number" id="rows" value="10" min="5" max="30">
+    </label>
+
+    <label>
+      Cols:
+      <input type="number" id="cols" value="10" min="5" max="30">
+    </label>
+
+    <label>
+      Bombs:
+      <input type="number" id="bombs" value="10" min="1" max="300">
+    </label>
+
     <button id="startBtn">Start Game</button>
     <button id="darkModeBtn">🌓 Dark Mode</button>
   </div>
 
+  <!-- LOBBY / WEBRTC -->
+  <h2>Lobby (1v1)</h2>
+
+  <div id="lobby">
+    <button id="hostBtn">Host Game</button>
+    <button id="joinBtn">Join Game</button>
+    <button id="signalBtn">Send Signal</button>
+    <br><br>
+
+    <textarea
+      id="signalBox"
+      rows="6"
+      cols="60"
+      placeholder="Copy / paste offer or answer here"
+    ></textarea>
+  </div>
+
+  <!-- BOARDS -->
   <div id="boards">
     <div>
       <h3>You</h3>
       <div id="player-board" class="game-container"></div>
     </div>
+
     <div>
       <h3>Opponent</h3>
       <div id="opponent-board" class="game-container spectator"></div>
     </div>
   </div>
 
+  <!-- STATUS -->
   <p id="status"></p>
 
+  <!-- SCRIPT -->
   <script src="script.js"></script>
+
 </body>
 </html>
