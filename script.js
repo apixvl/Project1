@@ -16,14 +16,27 @@ const firebaseConfig = {
   apiKey: "AIzaSyAtR4UxoU8x38By_MkSo7SEsQJ4CI6yoSs",
   authDomain: "minesweeper-aa9a6.firebaseapp.com",
   projectId: "minesweeper-aa9a6",
-  storageBucket: "minesweeper-aa9a6.firebasestorage.app",
-  messagingSenderId: "320578646146",
-  appId: "1:320578646146:web:c0b70ca52c6544951c849b",
-  measurementId: "G-4H3HDD633H"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+/*************************
+ * DOM REFERENCES
+ *************************/
+const rowsInput = document.getElementById("rows");
+const colsInput = document.getElementById("cols");
+const bombsInput = document.getElementById("bombs");
+const lobbyCodeInput = document.getElementById("lobbyCode");
+
+const hostBtn = document.getElementById("hostBtn");
+const joinBtn = document.getElementById("joinBtn");
+const startBtn = document.getElementById("startBtn");
+const darkModeBtn = document.getElementById("darkModeBtn");
+
+const statusText = document.getElementById("status");
+const playerContainer = document.getElementById("player-board");
+const opponentContainer = document.getElementById("opponent-board");
 
 /*************************
  * Utilities
@@ -33,7 +46,7 @@ function seededRandom(seed) {
   return () => (v = v * 16807 % 2147483647) / 2147483647;
 }
 
-function lobbyCode() {
+function generateLobbyCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
@@ -42,26 +55,26 @@ function lobbyCode() {
  *************************/
 class MinesweeperBoard {
   constructor(container, rows, cols, bombs, seed, interactive, onWin) {
-    this.c = container;
-    this.r = rows;
-    this.cl = cols;
-    this.b = bombs;
-    this.rand = seededRandom(seed);
+    this.container = container;
+    this.rows = rows;
+    this.cols = cols;
+    this.bombs = bombs;
+    this.random = seededRandom(seed);
     this.interactive = interactive;
     this.onWin = onWin;
     this.revealed = 0;
-    this.over = false;
+    this.gameOver = false;
     this.board = [];
     this.init();
   }
 
   init() {
-    this.c.innerHTML = "";
-    this.c.style.gridTemplateColumns = `repeat(${this.cl},30px)`;
+    this.container.innerHTML = "";
+    this.container.style.gridTemplateColumns = `repeat(${this.cols},30px)`;
 
-    for (let r = 0; r < this.r; r++) {
+    for (let r = 0; r < this.rows; r++) {
       this.board[r] = [];
-      for (let c = 0; c < this.cl; c++) {
+      for (let c = 0; c < this.cols; c++) {
         const cell = {
           r, c, bomb: false, rev: false, flag: false, adj: 0,
           el: document.createElement("div")
@@ -72,44 +85,44 @@ class MinesweeperBoard {
           cell.el.onclick = () => this.reveal(cell);
           cell.el.oncontextmenu = e => {
             e.preventDefault();
-            this.flag(cell);
+            this.toggleFlag(cell);
           };
         }
 
-        this.c.appendChild(cell.el);
+        this.container.appendChild(cell.el);
         this.board[r][c] = cell;
       }
     }
 
     let placed = 0;
-    while (placed < this.b) {
-      const r = Math.floor(this.rand() * this.r);
-      const c = Math.floor(this.rand() * this.cl);
+    while (placed < this.bombs) {
+      const r = Math.floor(this.random() * this.rows);
+      const c = Math.floor(this.random() * this.cols);
       if (!this.board[r][c].bomb) {
         this.board[r][c].bomb = true;
         placed++;
       }
     }
 
-    for (let r = 0; r < this.r; r++)
-      for (let c = 0; c < this.cl; c++)
-        this.board[r][c].adj = this.neigh(r, c).filter(n => n.bomb).length;
+    for (let r = 0; r < this.rows; r++)
+      for (let c = 0; c < this.cols; c++)
+        this.board[r][c].adj = this.neighbors(r, c).filter(n => n.bomb).length;
   }
 
-  neigh(r, c) {
+  neighbors(r, c) {
     const out = [];
     for (let dr = -1; dr <= 1; dr++)
       for (let dc = -1; dc <= 1; dc++) {
         if (!dr && !dc) continue;
         const nr = r + dr, nc = c + dc;
-        if (nr >= 0 && nc >= 0 && nr < this.r && nc < this.cl)
+        if (nr >= 0 && nc >= 0 && nr < this.rows && nc < this.cols)
           out.push(this.board[nr][nc]);
       }
     return out;
   }
 
   reveal(cell) {
-    if (this.over || cell.rev || cell.flag) return;
+    if (this.gameOver || cell.rev || cell.flag) return;
     cell.rev = true;
     this.revealed++;
     cell.el.classList.add("revealed");
@@ -117,21 +130,21 @@ class MinesweeperBoard {
     if (cell.bomb) {
       cell.el.textContent = "💣";
       cell.el.classList.add("bomb");
-      this.over = true;
+      this.gameOver = true;
       return;
     }
 
     if (cell.adj) cell.el.textContent = cell.adj;
-    else this.neigh(cell.r, cell.c).forEach(n => this.reveal(n));
+    else this.neighbors(cell.r, cell.c).forEach(n => this.reveal(n));
 
-    if (this.revealed === this.r * this.cl - this.b) {
-      this.over = true;
+    if (this.revealed === this.rows * this.cols - this.bombs) {
+      this.gameOver = true;
       this.onWin();
     }
   }
 
-  flag(cell) {
-    if (cell.rev || this.over) return;
+  toggleFlag(cell) {
+    if (cell.rev || this.gameOver) return;
     cell.flag = !cell.flag;
     cell.el.classList.toggle("flagged");
     cell.el.textContent = cell.flag ? "🚩" : "";
@@ -141,44 +154,39 @@ class MinesweeperBoard {
 /*************************
  * WebRTC + Lobby
  *************************/
-let pc, dc, lobbyId, isHost = false;
+let pc, dc, lobbyId;
 
 function setupRTC() {
   pc = new RTCPeerConnection();
   dc = pc.createDataChannel("game");
-  dc.onmessage = e => handleMsg(JSON.parse(e.data));
+  dc.onmessage = e => handleMessage(JSON.parse(e.data));
 }
 
 async function hostGame() {
-  isHost = true;
   setupRTC();
+  lobbyId = generateLobbyCode();
 
-  lobbyId = lobbyCode();
   lobbyCodeInput.value = lobbyId;
   lobbyCodeInput.select();
-  status.textContent = "Share this lobby code with your opponent";
+  statusText.textContent = "Share this lobby code with your opponent";
 
   const ref = doc(db, "lobbies", lobbyId);
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  await setDoc(ref, {
-    offer,
-    createdAt: serverTimestamp()
-  });
+  await setDoc(ref, { offer, createdAt: serverTimestamp() });
 
   onSnapshot(ref, async snap => {
-    const d = snap.data();
-    if (d?.answer && !pc.currentRemoteDescription)
-      await pc.setRemoteDescription(d.answer);
+    const data = snap.data();
+    if (data?.answer && !pc.currentRemoteDescription)
+      await pc.setRemoteDescription(data.answer);
   });
 }
 
 async function joinGame() {
-  isHost = false;
   setupRTC();
-
   lobbyId = lobbyCodeInput.value.toUpperCase();
+
   const ref = doc(db, "lobbies", lobbyId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return alert("Lobby not found");
@@ -193,42 +201,41 @@ async function joinGame() {
  * Game Sync
  *************************/
 function send(msg) {
-  dc?.readyState === "open" && dc.send(JSON.stringify(msg));
+  if (dc && dc.readyState === "open")
+    dc.send(JSON.stringify(msg));
 }
 
-function handleMsg(msg) {
+function handleMessage(msg) {
   if (msg.type === "WIN") {
-    status.textContent = "💀 You lose!";
-    player.over = true;
+    statusText.textContent = "💀 You lose!";
+    player.gameOver = true;
   }
 }
 
 /*************************
- * Game Boot
+ * Game Start
  *************************/
 let player, opponent;
-const status = document.getElementById("status");
-const lobbyCodeInput = document.getElementById("lobbyCode");
 
-document.getElementById("startBtn").onclick = () => {
-  const r = +rows.value, c = +cols.value, b = +bombs.value;
+startBtn.onclick = () => {
+  const r = +rowsInput.value;
+  const c = +colsInput.value;
+  const b = +bombsInput.value;
 
   player = new MinesweeperBoard(
-    document.getElementById("player-board"),
-    r, c, b, Math.random() * 1e9, true,
+    playerContainer, r, c, b, Math.random() * 1e9, true,
     () => {
-      status.textContent = "🎉 You win!";
+      statusText.textContent = "🎉 You win!";
       send({ type: "WIN" });
     }
   );
 
   opponent = new MinesweeperBoard(
-    document.getElementById("opponent-board"),
-    r, c, b, Math.random() * 1e9, false,
+    opponentContainer, r, c, b, Math.random() * 1e9, false,
     () => {}
   );
 
-  status.textContent = "";
+  statusText.textContent = "";
 };
 
 hostBtn.onclick = hostGame;
