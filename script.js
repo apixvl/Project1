@@ -1,241 +1,234 @@
-/***********************
+/*************************
+ * Firebase (MODULAR SDK)
+ *************************/
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  onSnapshot,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAtR4UxoU8x38By_MkSo7SEsQJ4CI6yoSs",
+  authDomain: "minesweeper-aa9a6.firebaseapp.com",
+  projectId: "minesweeper-aa9a6",
+  storageBucket: "minesweeper-aa9a6.firebasestorage.app",
+  messagingSenderId: "320578646146",
+  appId: "1:320578646146:web:c0b70ca52c6544951c849b",
+  measurementId: "G-4H3HDD633H"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/*************************
  * Utilities
- ***********************/
+ *************************/
 function seededRandom(seed) {
-  let value = seed % 2147483647;
-  return () => {
-    value = value * 16807 % 2147483647;
-    return (value - 1) / 2147483646;
-  };
+  let v = seed % 2147483647;
+  return () => (v = v * 16807 % 2147483647) / 2147483647;
 }
 
-/***********************
+function lobbyCode() {
+  return Math.random().toString(36).substring(2, 7).toUpperCase();
+}
+
+/*************************
  * Minesweeper Board
- ***********************/
+ *************************/
 class MinesweeperBoard {
   constructor(container, rows, cols, bombs, seed, interactive, onWin) {
-    this.container = container;
-    this.rows = rows;
-    this.cols = cols;
-    this.bombs = bombs;
-    this.seed = seed;
-    this.random = seededRandom(seed);
+    this.c = container;
+    this.r = rows;
+    this.cl = cols;
+    this.b = bombs;
+    this.rand = seededRandom(seed);
     this.interactive = interactive;
     this.onWin = onWin;
-
+    this.revealed = 0;
+    this.over = false;
     this.board = [];
-    this.revealedCount = 0;
-    this.gameOver = false;
-
     this.init();
   }
 
   init() {
-    this.container.innerHTML = '';
-    this.container.style.gridTemplateColumns = `repeat(${this.cols}, 30px)`;
+    this.c.innerHTML = "";
+    this.c.style.gridTemplateColumns = `repeat(${this.cl},30px)`;
 
-    for (let r = 0; r < this.rows; r++) {
+    for (let r = 0; r < this.r; r++) {
       this.board[r] = [];
-      for (let c = 0; c < this.cols; c++) {
+      for (let c = 0; c < this.cl; c++) {
         const cell = {
-          r, c,
-          bomb: false,
-          revealed: false,
-          flagged: false,
-          el: document.createElement('div'),
-          adj: 0
+          r, c, bomb: false, rev: false, flag: false, adj: 0,
+          el: document.createElement("div")
         };
-
-        cell.el.className = 'cell';
+        cell.el.className = "cell";
 
         if (this.interactive) {
           cell.el.onclick = () => this.reveal(cell);
           cell.el.oncontextmenu = e => {
             e.preventDefault();
-            this.toggleFlag(cell);
+            this.flag(cell);
           };
         }
 
-        this.container.appendChild(cell.el);
+        this.c.appendChild(cell.el);
         this.board[r][c] = cell;
       }
     }
 
-    this.placeBombs();
-    this.calculateAdj();
-  }
-
-  placeBombs() {
     let placed = 0;
-    while (placed < this.bombs) {
-      const r = Math.floor(this.random() * this.rows);
-      const c = Math.floor(this.random() * this.cols);
+    while (placed < this.b) {
+      const r = Math.floor(this.rand() * this.r);
+      const c = Math.floor(this.rand() * this.cl);
       if (!this.board[r][c].bomb) {
         this.board[r][c].bomb = true;
         placed++;
       }
     }
+
+    for (let r = 0; r < this.r; r++)
+      for (let c = 0; c < this.cl; c++)
+        this.board[r][c].adj = this.neigh(r, c).filter(n => n.bomb).length;
   }
 
-  calculateAdj() {
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const cell = this.board[r][c];
-        if (cell.bomb) continue;
-        cell.adj = this.neighbors(r, c).filter(n => n.bomb).length;
-      }
-    }
-  }
-
-  neighbors(r, c) {
-    const res = [];
-    for (let dr = -1; dr <= 1; dr++) {
+  neigh(r, c) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++)
       for (let dc = -1; dc <= 1; dc++) {
         if (!dr && !dc) continue;
         const nr = r + dr, nc = c + dc;
-        if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
-          res.push(this.board[nr][nc]);
-        }
+        if (nr >= 0 && nc >= 0 && nr < this.r && nc < this.cl)
+          out.push(this.board[nr][nc]);
       }
-    }
-    return res;
+    return out;
   }
 
   reveal(cell) {
-    if (this.gameOver || cell.revealed || cell.flagged) return;
-
-    cell.revealed = true;
-    this.revealedCount++;
-    cell.el.classList.add('revealed');
+    if (this.over || cell.rev || cell.flag) return;
+    cell.rev = true;
+    this.revealed++;
+    cell.el.classList.add("revealed");
 
     if (cell.bomb) {
-      cell.el.textContent = '💣';
-      cell.el.classList.add('bomb');
-      this.gameOver = true;
+      cell.el.textContent = "💣";
+      cell.el.classList.add("bomb");
+      this.over = true;
       return;
     }
 
-    if (cell.adj > 0) {
-      cell.el.textContent = cell.adj;
-    } else {
-      this.neighbors(cell.r, cell.c).forEach(n => this.reveal(n));
-    }
+    if (cell.adj) cell.el.textContent = cell.adj;
+    else this.neigh(cell.r, cell.c).forEach(n => this.reveal(n));
 
-    if (this.checkWin()) {
-      this.gameOver = true;
+    if (this.revealed === this.r * this.cl - this.b) {
+      this.over = true;
       this.onWin();
     }
   }
 
-  toggleFlag(cell) {
-    if (cell.revealed || this.gameOver) return;
-    cell.flagged = !cell.flagged;
-    cell.el.classList.toggle('flagged');
-    cell.el.textContent = cell.flagged ? '🚩' : '';
-  }
-
-  checkWin() {
-    return this.revealedCount === (this.rows * this.cols - this.bombs);
+  flag(cell) {
+    if (cell.rev || this.over) return;
+    cell.flag = !cell.flag;
+    cell.el.classList.toggle("flagged");
+    cell.el.textContent = cell.flag ? "🚩" : "";
   }
 }
 
-/***********************
- * WebRTC (1v1)
- ***********************/
-let pc, dc;
-let isHost = false;
+/*************************
+ * WebRTC + Lobby
+ *************************/
+let pc, dc, lobbyId, isHost = false;
 
-function setupConnection() {
+function setupRTC() {
   pc = new RTCPeerConnection();
-
-  pc.ondatachannel = e => {
-    dc = e.channel;
-    dc.onmessage = handleMessage;
-  };
-
-  dc = pc.createDataChannel('game');
-  dc.onmessage = handleMessage;
+  dc = pc.createDataChannel("game");
+  dc.onmessage = e => handleMsg(JSON.parse(e.data));
 }
 
 async function hostGame() {
   isHost = true;
-  setupConnection();
+  setupRTC();
+
+  lobbyId = lobbyCode();
+  status.textContent = `Lobby: ${lobbyId}`;
+
+  const ref = doc(db, "lobbies", lobbyId);
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  signalBox.value = JSON.stringify(offer);
+
+  await setDoc(ref, {
+    offer,
+    createdAt: serverTimestamp()
+  });
+
+  onSnapshot(ref, async snap => {
+    const d = snap.data();
+    if (d?.answer && !pc.currentRemoteDescription)
+      await pc.setRemoteDescription(d.answer);
+  });
 }
 
 async function joinGame() {
   isHost = false;
-  setupConnection();
-  const offer = JSON.parse(signalBox.value);
-  await pc.setRemoteDescription(offer);
+  setupRTC();
+
+  lobbyId = lobbyCodeInput.value.toUpperCase();
+  const ref = doc(db, "lobbies", lobbyId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return alert("Lobby not found");
+
+  await pc.setRemoteDescription(snap.data().offer);
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  signalBox.value = JSON.stringify(answer);
+  await updateDoc(ref, { answer });
 }
 
-async function sendSignal() {
-  const msg = JSON.parse(signalBox.value);
-  await pc.setRemoteDescription(msg);
-}
-
-/***********************
+/*************************
  * Game Sync
- ***********************/
-function send(data) {
-  if (dc && dc.readyState === 'open') {
-    dc.send(JSON.stringify(data));
+ *************************/
+function send(msg) {
+  dc?.readyState === "open" && dc.send(JSON.stringify(msg));
+}
+
+function handleMsg(msg) {
+  if (msg.type === "WIN") {
+    status.textContent = "💀 You lose!";
+    player.over = true;
   }
 }
 
-function handleMessage(e) {
-  const msg = JSON.parse(e.data);
-  if (msg.type === 'WIN') {
-    statusText.textContent = '💀 You lose!';
-    playerBoard.gameOver = true;
-  }
-}
-
-/***********************
+/*************************
  * Game Boot
- ***********************/
-let playerBoard, opponentBoard;
-const statusText = document.getElementById('status');
+ *************************/
+let player, opponent;
+const status = document.getElementById("status");
+const lobbyCodeInput = document.getElementById("lobbyCode");
 
-function startMatch() {
-  const rows = +document.getElementById('rows').value;
-  const cols = +document.getElementById('cols').value;
-  const bombs = +document.getElementById('bombs').value;
+document.getElementById("startBtn").onclick = () => {
+  const r = +rows.value, c = +cols.value, b = +bombs.value;
 
-  const mySeed = Math.floor(Math.random() * 1e9);
-  const theirSeed = Math.floor(Math.random() * 1e9);
-
-  playerBoard = new MinesweeperBoard(
-    document.getElementById('player-board'),
-    rows, cols, bombs, mySeed, true,
+  player = new MinesweeperBoard(
+    document.getElementById("player-board"),
+    r, c, b, Math.random() * 1e9, true,
     () => {
-      statusText.textContent = '🎉 You win!';
-      send({ type: 'WIN' });
+      status.textContent = "🎉 You win!";
+      send({ type: "WIN" });
     }
   );
 
-  opponentBoard = new MinesweeperBoard(
-    document.getElementById('opponent-board'),
-    rows, cols, bombs, theirSeed, false,
+  opponent = new MinesweeperBoard(
+    document.getElementById("opponent-board"),
+    r, c, b, Math.random() * 1e9, false,
     () => {}
   );
 
-  statusText.textContent = '';
-}
+  status.textContent = "";
+};
 
-/***********************
- * UI Bindings
- ***********************/
-document.getElementById('startBtn').onclick = startMatch;
-document.getElementById('darkModeBtn').onclick =
-  () => document.body.classList.toggle('dark-mode');
-
-document.getElementById('hostBtn').onclick = hostGame;
-document.getElementById('joinBtn').onclick = joinGame;
-document.getElementById('signalBtn').onclick = sendSignal;
+hostBtn.onclick = hostGame;
+joinBtn.onclick = joinGame;
+darkModeBtn.onclick = () => document.body.classList.toggle("dark-mode");
